@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Token Radar v2 — 200 pre-token protocols, ranked by conditional odds</title>
+<link rel="stylesheet" href="app.css">
+</head>
+<body>
+<header class="masthead">
+  <div>
+    <h1>Token Radar <span class="v2">v2</span></h1>
+    <p class="tag">Which pre-token protocol is worth farming next — ranked by the odds it ever launches, <em>given it hasn't yet</em>.</p>
+  </div>
+  <div class="asof"><span id="asOf">—</span><br><span class="muted">sealed snapshot · model fit live in your browser</span></div>
+</header>
+
+<section class="kpis" id="kpis" aria-label="Key numbers"></section>
+<section class="integrity" id="integrity" aria-label="Integrity checks"></section>
+
+<section class="panel" id="validationPanel">
+  <h2>Why you can trust this board <span class="muted small">— the validation lives on the cover, not buried in a tab</span></h2>
+  <div class="two-col">
+    <div>
+      <h3>The value fit: ln(market cap) on ln(TVL), chains, 7-day growth</h3>
+      <div id="scatter" class="scatter"></div>
+      <p class="muted small">94 comparables. The line is the Huber fit at median chains and growth; the band is the conformal 50% interval (±<span id="bandWidth">—</span> in log space). R² is only <span id="r2">—</span> — the fit is honest about that, and the board carries the uncertainty as a rank range on every row.</p>
+    </div>
+    <div>
+      <h3>Held-out tests</h3>
+      <table class="mini" id="heldOut"></table>
+      <h3>Which spec ships?</h3>
+      <table class="mini" id="ablation"></table>
+      <p class="muted small">Ship rule: a spec must beat the shipped one on <strong>both</strong> leave-one-out and walk-forward to replace it. None did — the v1 Huber spec stands, and the Firstlight one-feature OLS loses on LOO.</p>
+    </div>
+  </div>
+</section>
+
+<section class="panel" id="oddsPanel">
+  <h2>The v2 fix: conditional odds <span class="muted small">— P(ever launches | tokenless at this age)</span></h2>
+  <div class="two-col">
+    <div>
+      <table class="mini" id="buckets"></table>
+      <p class="muted small">F(t) is the share of protocols already tokened by each age, measured on 525 peers. The conditional odds are (F<sub>∞</sub> − F(t)) / (1 − F(t)) with F<sub>∞</sub> = 0.95. The 4–5y and 5y+ buckets are pooled (n = 49) because the raw 5y+ bucket held only 6 protocols and broke the monotone fall. Protocols with no listing date use the cohort base rate (59%).</p>
+    </div>
+    <div>
+      <div id="oddsBars" class="odds-bars"></div>
+      <p class="muted small">Cumulative incidence says an old protocol is "likely" — but a protocol that survived four years tokenless has already outlasted most of its cohort. v1 overrated the old and underrated the young by ~3× each way. v2 fixes that, and keeps the logistic fit as a <em>quality ratio</em> — a protocol that looks more launchable than its age peers keeps its edge.</p>
+    </div>
+  </div>
+</section>
+
+<nav class="tabs" role="tablist">
+  <button class="tab active" data-tab="board" role="tab">Board · 200 rows</button>
+  <button class="tab" data-tab="method" role="tab">Method &amp; evidence</button>
+</nav>
+
+<section id="tab-board">
+  <div class="controls">
+    <input id="search" type="search" placeholder="Search protocol or category…" aria-label="Search protocols">
+    <select id="verdictFilter" aria-label="Filter by verdict">
+      <option value="">All verdicts</option>
+      <option value="FARM">FARM only</option>
+      <option value="THIN">THIN only</option>
+      <option value="SKIP">SKIP only</option>
+    </select>
+    <label class="check"><input type="checkbox" id="watchOnly"> Watchlist only (40)</label>
+    <button id="csvBtn" type="button">Export CSV</button>
+    <span class="muted" id="rowCount"></span>
+  </div>
+  <div class="table-wrap">
+    <table id="boardTable">
+      <thead><tr>
+        <th data-sort="rank">#</th><th data-sort="name">Protocol</th><th data-sort="tvl_usd">TVL</th><th data-sort="age_years">Age</th>
+        <th data-sort="fit_mcap_usd">Fitted mcap</th><th data-sort="odds_cum">Cum. odds</th><th data-sort="odds_cond">Cond. odds</th>
+        <th data-sort="implied_value_usd">Implied value</th><th data-sort="verdict">Verdict</th><th data-sort="break_even_usd">Break-even</th>
+      </tr></thead>
+      <tbody id="boardBody"></tbody>
+    </table>
+  </div>
+  <p class="muted small" id="boardFooter"></p>
+</section>
+
+<section id="detail" class="panel hidden" aria-label="Protocol detail">
+  <button id="closeDetail" type="button" class="close">× Close detail</button>
+  <h2 id="detailName"></h2>
+  <p class="muted" id="detailMeta"></p>
+  <h3>The arithmetic</h3>
+  <div id="detailArith" class="arith"></div>
+  <h3>Farm economics</h3>
+  <div id="detailFarm"></div>
+  <h3>Sensitivity: expected net $ by deposit × airdrop share</h3>
+  <p class="muted small">Expected drop minus the $960 all-in cost. The highlighted cell is the plan (0.02% of TVL × 7% airdrop).</p>
+  <div class="table-wrap"><table class="mini" id="sensGrid"></table></div>
+  <h3>Try your own numbers</h3>
+  <div class="sandbox">
+    <label>Deposit $ <input id="sbDeposit" type="number" min="0" step="100" value="1000"></label>
+    <label>Airdrop share % <input id="sbShare" type="number" min="0" max="100" step="0.5" value="7"></label>
+    <span id="sbResult"></span>
+  </div>
+  <h3>8 farm steps</h3>
+  <ol id="detailSteps" class="steps"></ol>
+</section>
+
+<section id="tab-method" class="hidden">
+  <div class="panel">
+    <h2>The value model</h2>
+    <p>ln(market cap) = <span id="valueFormula"></span>, fitted by Huber regression (c = 1.345) on 94 comparables — tokened protocols with market cap, TVL and a category that isn't an exchange, bridge or liquid-staking wrapper. Huber wins because crypto market caps have fat tails: one 100× outlier shouldn't drag the whole line.</p>
+    <table class="mini" id="termTableFull"></table>
+    <h3>Held-out tests, in full</h3>
+    <table class="mini" id="heldOutFull"></table>
+  </div>
+  <div class="panel">
+    <h2>The odds model</h2>
+    <p>Logistic regression on 525 peers: P(has token) from ln(years), ln(TVL), 7-day growth and the category's token rate (shrunk toward the base rate, k = 10). Brier score <span id="brierText"></span>. Calibration:</p>
+    <table class="mini" id="calibration"></table>
+    <h3>What v2 changes</h3>
+    <p>v1 used the fitted cumulative probability as "odds ever". That is the wrong number for a tokenless protocol: it counts launches that already happened in the cohort. The cure model fixes it — every protocol either launches eventually (fraction F<sub>∞</sub>) or never (1 − F<sub>∞</sub>), so P(ever | tokenless at age t) = (F<sub>∞</sub> − F(t)) / (1 − F(t)). The final odds multiply the conditional age odds by a <em>quality ratio</em>: the protocol's own fitted probability over its age bucket's rate. Age sets the baseline; the protocol's features move it up or down.</p>
+    <h3>F<sub>∞</sub> is not identified — honestly</h3>
+    <p>The current-status likelihood (each peer contributes F(t) if tokened, 1 − F(t) if not) rises monotonically to the F<sub>∞</sub> = 1.00 boundary; the data cannot pin the cure fraction down. v2 uses 0.95, the midpoint of the honest range [0.90, 1.00]. The profile:</p>
+    <table class="mini" id="finfProfile"></table>
+    <h3>How much does F<sub>∞</sub> matter?</h3>
+    <table class="mini" id="finfSens"></table>
+    <p class="muted small">The top 3 are identical at every F<sub>∞</sub> in [0.90, 1.00]; the top 20 moves by one row at most. The board's conclusions do not depend on the choice.</p>
+  </div>
+  <div class="panel">
+    <h2>Before / after: v1 → v2 top 20</h2>
+    <table class="mini" id="beforeAfter"></table>
+    <p class="muted small">The correction moves 5 of the top 20. Polymarket falls out of the top 20 (it is old — most of its cohort already launched, so its conditional odds are low); circle-gateway enters at #9 (young, and its fitted probability is 2.6× its age bucket's rate).</p>
+  </div>
+  <div class="panel">
+    <h2>Honest limits</h2>
+    <ul>
+      <li><strong>The value fit is weak.</strong> R² ≈ 0.11 — TVL, chains and growth explain little of market cap. The conformal interval is ±3.2× and bootstrap rank ranges are wide (some top-10 rows span 100+ ranks). Treat ranks as a shortlist, not a prophecy.</li>
+      <li><strong>F<sub>∞</sub> is a choice, not a measurement.</strong> The likelihood can't identify it; 0.95 is a midpoint. The sensitivity table above shows the board barely moves.</li>
+      <li><strong>Age is a proxy.</strong> The cure model assumes protocols launch on a clock. Real launches follow funding rounds, market cycles and team decisions the snapshot cannot see.</li>
+      <li><strong>Survivorship.</strong> Dead protocols leave the snapshot; the peers are the survivors. F(t) is measured on survivors only.</li>
+      <li><strong>Farm economics are a plan, not a promise.</strong> The 7% airdrop share, the 0.02% deposit and the $960 cost are assumptions; the sensitivity grid shows what happens when they're wrong.</li>
+      <li><strong>Snapshot.</strong> One sealed snapshot as of <span id="asOf2"></span>. Nothing here updates live.</li>
+    </ul>
+  </div>
+</section>
+
+<footer class="muted small">
+  Token Radar v2 · entry for token-radar-01 · fitted live from the sealed snapshot in your browser (the coefficients above are the published ones; the integrity strip refits rank #1 and compares). No network calls.
+</footer>
+<script src="../data.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
